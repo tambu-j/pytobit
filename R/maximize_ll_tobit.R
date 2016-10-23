@@ -53,6 +53,28 @@ ll_wrap(cbind(b0,b1,b2,l_scale))
 
 lbfgs(cbind(b0,b1,b2,l_scale), ll_wrap)
 
+f_v_z <- function(Y, X, betas, l_scale) {
+  z <- (Y - X %*% betas)/l_scale
+  return(z)
+}
+
+z_v_dlogis <- function(z) {
+  return(dlogis(z, 0, 1))
+}
+
+z_v_cdf <- function(z) {
+  return(plogis(z, 0, 1))
+}
+
+ll_v <- function(Y, X, censored, betas, l_scale) {
+  z <- f_v_z(Y, X, betas, l_scale)
+  res <- c()
+  res[censored] <- log(z_v_cdf(z[censored]))
+  res[!censored] <- log(z_v_dlogis(z[!censored])) - log(l_scale)
+  return (sum(res))
+}
+
+
 # OLS estimate as a starting point
 ols_estimate <- as.vector(coefficients(lm('durable ~ age + quant', data=tobin)))
 
@@ -61,6 +83,21 @@ y_mean <- sum(y)/length(y)
 y_var  <- sum((y-y_mean)^2)/length(y)
 y_coef <- c(y_mean, y_var/3.2)
 y_coef <- c(y_coef[1], log(4*y_coef[2])/2 )   # log(2*sqrt(variance)) = log(4*var)/2
-# now fit an intercept only
 
-# TODO: f_zi to be called in ll; vectorize so xTb, adding intercept; fit intercept only for initial guess
+# now fit an intercept only
+Y = matrix(y)
+X = matrix(c(rep(1,length(x1)),x1,x2), ncol=3)
+betas = matrix(c(b0,b1,b2))
+Y - X %*% betas
+
+ll_v_wrap <- function(x) {
+  betas = matrix(x[1:length(x)-1])
+  l_scale = x[length(x)]
+  return(-ll_v(Y, X, censored, betas, l_scale))
+}
+
+X = matrix(c(rep(1,length(x1))), ncol=1)
+initial_fit <- lbfgs(y_coef, ll_v_wrap)
+scale_guess <- initial_fit$par[2]
+X = matrix(c(rep(1,length(x1)),x1,x2), ncol=3)
+lbfgs(c(ols_estimate,scale_guess), ll_v_wrap)
